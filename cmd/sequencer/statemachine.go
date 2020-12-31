@@ -64,8 +64,7 @@ func (s *ExampleStateMachine) Update(data []byte) (sm.Result, error) {
 
 // SaveSnapshot saves the current IStateMachine state into a snapshot using the
 // specified io.Writer object.
-func (s *ExampleStateMachine) SaveSnapshot(w io.Writer,
-	fc sm.ISnapshotFileCollection, done <-chan struct{}) error {
+func (s *ExampleStateMachine) SaveSnapshot(w io.Writer, fc sm.ISnapshotFileCollection, done <-chan struct{}) error {
 	// as shown above, the only state that can be saved is the Count variable
 	// there is no external file in this IStateMachine example, we thus leave
 	// the fc untouched
@@ -76,9 +75,7 @@ func (s *ExampleStateMachine) SaveSnapshot(w io.Writer,
 }
 
 // RecoverFromSnapshot recovers the state using the provided snapshot.
-func (s *ExampleStateMachine) RecoverFromSnapshot(r io.Reader,
-	files []sm.SnapshotFile,
-	done <-chan struct{}) error {
+func (s *ExampleStateMachine) RecoverFromSnapshot(r io.Reader, files []sm.SnapshotFile, done <-chan struct{}) error {
 	// restore the Count variable, that is the only state we maintain in this
 	// example, the input files is expected to be empty
 	data, err := ioutil.ReadAll(r)
