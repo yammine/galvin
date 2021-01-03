@@ -1,4 +1,4 @@
-module github.com/yammine/calvin-go
+module github.com/yammine/galvin
 
 go 1.15
 

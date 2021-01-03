@@ -1,2 +1,2 @@
 build:
-	go build -o ./bin/sequencer ./cmd/sequencer
+	go build -o ./bin/galvin ./cmd/galvin

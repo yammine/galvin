@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/jessevdk/go-flags"
@@ -14,6 +13,7 @@ import (
 	"github.com/lni/dragonboat/v3/config"
 	"github.com/lni/dragonboat/v3/logger"
 	"github.com/lni/goutils/syncutil"
+	"github.com/yammine/galvin/sequencer"
 )
 
 type nodeOpts struct {
@@ -63,9 +63,9 @@ func main() {
 	fmt.Fprintf(os.Stdout, "node address: %s\n", nodeAddr)
 	// change the log verbosity
 	logger.GetLogger("raft").SetLevel(logger.ERROR)
-	logger.GetLogger("rsm").SetLevel(logger.WARNING)
-	logger.GetLogger("transport").SetLevel(logger.WARNING)
-	logger.GetLogger("grpc").SetLevel(logger.WARNING)
+	logger.GetLogger("rsm").SetLevel(logger.ERROR)
+	logger.GetLogger("transport").SetLevel(logger.ERROR)
+	logger.GetLogger("grpc").SetLevel(logger.ERROR)
 
 	nh, err := dragonboat.NewNodeHost(nhcfg)
 	if err != nil {
@@ -74,9 +74,15 @@ func main() {
 
 	nh.StartCluster(initialClusterMembers, opts.Join, NewExampleStateMachine, cfg)
 
+	fmt.Println("RUNNING RAFT SERVER")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Hour)
+	defer cancel()
+	seq := sequencer.New(nh)
+
+	go seq.Run(ctx)
+
 	ch := make(chan string, 16)
 	consoleStopper := syncutil.NewStopper()
-	raftStopper := syncutil.NewStopper()
 
 	// Reads STDIN & pipes messages to the worker run by raftStopper
 	consoleStopper.RunWorker(func() {
@@ -88,37 +94,13 @@ func main() {
 				return
 			}
 			if s == "exit\n" {
-				raftStopper.Stop()
 				nh.Stop()
 				return
 			}
+			seq.SubmitTransaction(context.Background(), sequencer.Transaction{Raw: s})
 			ch <- s
 		}
 	})
 
-	raftStopper.RunWorker(func() {
-		cs := nh.GetNoOPSession(clusterID)
-		for {
-			select {
-			case v, ok := <-ch:
-				if !ok {
-					return
-				}
-				// remove the \n char
-				msg := strings.Replace(v, "\n", "", 1)
-				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-				_, err := nh.SyncPropose(ctx, cs, []byte(msg))
-				cancel()
-
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "SyncPropose returned error %v\n", err)
-				}
-			case <-raftStopper.ShouldStop():
-				return
-			}
-		}
-	})
-
-	fmt.Println("RUNNING RAFT SERVER")
-	raftStopper.Wait()
+	consoleStopper.Wait()
 }
