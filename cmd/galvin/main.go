@@ -1,10 +1,12 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"fmt"
+	"io/ioutil"
+	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"time"
 
@@ -12,7 +14,6 @@ import (
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/dragonboat/v3/config"
 	"github.com/lni/dragonboat/v3/logger"
-	"github.com/lni/goutils/syncutil"
 	"github.com/yammine/galvin/sequencer"
 )
 
@@ -81,26 +82,34 @@ func main() {
 
 	go seq.Run(ctx)
 
-	ch := make(chan string, 16)
-	consoleStopper := syncutil.NewStopper()
-
-	// Reads STDIN & pipes messages to the worker run by raftStopper
-	consoleStopper.RunWorker(func() {
-		reader := bufio.NewReader(os.Stdin)
-		for {
-			s, err := reader.ReadString('\n')
-			if err != nil {
-				close(ch)
-				return
-			}
-			if s == "exit\n" {
-				nh.Stop()
-				return
-			}
-			seq.SubmitTransaction(context.Background(), sequencer.Transaction{Raw: s})
-			ch <- s
+	h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		b, err := ioutil.ReadAll(req.Body)
+		if err != nil {
+			w.WriteHeader(400)
+			return
 		}
+		body := string(b)
+		seq.SubmitTransaction(req.Context(), sequencer.Transaction{Raw: body})
+
+		w.Write([]byte("OK"))
+		return
 	})
 
-	consoleStopper.Wait()
+	handler := http.NewServeMux()
+	handler.Handle("/foo", h)
+
+	srv := http.Server{
+		Addr:    fmt.Sprintf(":808%d", opts.NodeID),
+		Handler: handler,
+	}
+
+	go srv.ListenAndServe()
+
+	q := make(chan os.Signal)
+	signal.Notify(q, os.Kill, os.Interrupt)
+
+	<-q
+	fmt.Println("Quitting now")
+	srv.Shutdown(ctx)
+	nh.Stop()
 }
