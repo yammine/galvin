@@ -3,13 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
-	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/jessevdk/go-flags"
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/dragonboat/v3/config"
@@ -35,6 +34,10 @@ var (
 		3: "localhost:8003",
 	}
 )
+
+type req struct {
+	Body string `form:"body" json:"body"`
+}
 
 func main() {
 	opts := nodeOpts{}
@@ -82,34 +85,21 @@ func main() {
 
 	go seq.Run(ctx)
 
-	h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		b, err := ioutil.ReadAll(req.Body)
-		if err != nil {
-			w.WriteHeader(400)
-			return
-		}
-		body := string(b)
-		seq.SubmitTransaction(req.Context(), sequencer.Transaction{Raw: body})
+	r := gin.Default()
+	r.POST("/foo", func(c *gin.Context) {
+		b := &req{}
+		c.BindJSON(b)
 
-		w.Write([]byte("OK"))
-		return
+		seq.SubmitTransaction(c, sequencer.Transaction{Raw: b.Body})
+
+		c.Status(200)
 	})
-
-	handler := http.NewServeMux()
-	handler.Handle("/foo", h)
-
-	srv := http.Server{
-		Addr:    fmt.Sprintf(":808%d", opts.NodeID),
-		Handler: handler,
-	}
-
-	go srv.ListenAndServe()
+	go r.Run(fmt.Sprintf(":808%d", opts.NodeID))
 
 	q := make(chan os.Signal)
 	signal.Notify(q, os.Kill, os.Interrupt)
 
 	<-q
 	fmt.Println("Quitting now")
-	srv.Shutdown(ctx)
 	nh.Stop()
 }
