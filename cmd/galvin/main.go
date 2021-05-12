@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/yammine/galvin/raft"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -76,7 +77,7 @@ func main() {
 		panic(err)
 	}
 
-	nh.StartCluster(initialClusterMembers, opts.Join, NewExampleStateMachine, cfg)
+	nh.StartCluster(initialClusterMembers, opts.Join, raft.NewExampleStateMachine, cfg)
 
 	fmt.Println("RUNNING RAFT SERVER")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Hour)
