@@ -3,9 +3,10 @@ package raft
 import (
 	"encoding/binary"
 	"fmt"
-	sm "github.com/lni/dragonboat/v3/statemachine"
 	"io"
 	"io/ioutil"
+
+	sm "github.com/lni/dragonboat/v3/statemachine"
 )
 
 // ExampleStateMachine is the IStateMachine implementation used in the
