@@ -50,7 +50,7 @@ func (s *ExampleStateMachine) Update(data []byte) (sm.Result, error) {
 	// incoming update request. we also increase the counter by one to remember
 	// how many updates we have applied
 	s.Count++
-	s.NextBatchNumber = s.NextBatchNumber.Add(s.NextBatchNumber, big.NewInt(1))
+	s.NextBatchNumber.Add(s.NextBatchNumber, big.NewInt(1))
 	fmt.Printf("from ExampleStateMachine.Update(), msg: %s, count:%d, next_batch_number: %s\n", string(data), s.Count, s.NextBatchNumber.String())
 	return sm.Result{Value: uint64(len(data))}, nil
 }
