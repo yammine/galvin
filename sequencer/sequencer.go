@@ -2,6 +2,7 @@ package sequencer
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -11,8 +12,8 @@ import (
 )
 
 var (
-	defaults Config = Config{
-		// Using a 1 second epoch here to demonstrate stuff in development.
+	defaults = Config{
+		// Using a 1-second epoch here to demonstrate stuff in development.
 		EpochDuration: 1 * time.Second,
 		Reader:        false,
 	}
@@ -84,37 +85,28 @@ type Config struct {
 	EpochDuration time.Duration
 }
 
-// Batch is a batch of transactions
-type Batch struct {
-	transactions []Transaction
-
-	sync.Mutex
-}
-
 // Add ...
 func (b *Batch) Add(t Transaction) {
 	b.Lock()
 	defer b.Unlock()
 
-	b.transactions = append(b.transactions, t)
+	b.Transactions = append(b.Transactions, t)
 }
 
 // Flush ...
 func (b *Batch) Flush(ctx context.Context, s Store) {
 	b.Lock()
 	defer b.Unlock()
-	if len(b.transactions) == 0 {
+	if len(b.Transactions) == 0 {
 		return
 	}
 	fmt.Println("Flushing the current batch")
 
 	// build batch bytes
-	var bytes []byte
-	for i := range b.transactions {
-		bytes = append(bytes, b.transactions[i].Raw...)
-	}
+	// TODO: Handle errors
+	bytes, _ := json.Marshal(b)
 
-	// replace the int there with a configured cluster id
+	// TODO: replace the int there with a configured cluster id
 	cs := s.GetNoOPSession(1)
 	sr, err := s.SyncPropose(ctx, cs, bytes)
 	if err != nil {
@@ -123,17 +115,47 @@ func (b *Batch) Flush(ctx context.Context, s Store) {
 	}
 
 	// Clearing the batch since it has flushed successfully
-	b.transactions = make([]Transaction, 0)
+	b.Transactions = make([]Transaction, 0)
+	// Incrementing the batch number
+	b.Number++
 	fmt.Println("StateMachine Result", sr)
-}
-
-// Transaction ...
-type Transaction struct {
-	Raw string
 }
 
 // Store is an interface that our consensus store must implement
 type Store interface {
 	SyncPropose(context.Context, *client.Session, []byte) (statemachine.Result, error)
 	GetNoOPSession(uint64) *client.Session
+}
+
+type Batch struct {
+	sync.Mutex
+
+	Number       uint64
+	Transactions []Transaction
+}
+
+type Transaction struct {
+	// Globally unique transaction id
+	ID uint64
+	// Specifies which stored procedure to invoke at execution time.
+	Type string
+	// Arguments to be passed when invoking the stored procedure to execute this
+	// transaction. Args is a serialized protocol message. The client and backend
+	// application code is assumed to know how to interpret this protocol message
+	// based on Type.
+	Args []byte
+
+	// True if a transaction is known to span multiple nodes.
+	MultiPartition bool
+
+	// Keys of objects read (but not modified) by this transaction.
+	ReadSet []string
+	// Keys of objects modified (but not read) by this transaction.
+	WriteSet []string
+	// Keys of objects both read & modified by this transaction.
+	ReadWriteSet []string
+
+	// Nodes that will participate as Readers and Writers in this transaction.
+	Readers []string
+	Writers []string
 }

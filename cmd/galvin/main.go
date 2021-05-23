@@ -3,11 +3,14 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/yammine/galvin/raft"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"time"
+
+	"github.com/yammine/galvin/raft"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jessevdk/go-flags"
@@ -44,6 +47,54 @@ func main() {
 	opts := nodeOpts{}
 	flags.Parse(&opts)
 
+	cfg, nh := configure(opts)
+
+	nh.StartCluster(initialClusterMembers, opts.Join, raft.NewInMemory, cfg)
+
+	fmt.Println("RUNNING RAFT SERVER")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Hour)
+	defer cancel()
+	seq := sequencer.New(nh)
+
+	go seq.Run(ctx)
+
+	r := gin.Default()
+	r.POST("/submit", func(c *gin.Context) {
+		b := &req{}
+		c.BindJSON(b)
+
+		seq.SubmitTransaction(c, sequencer.Transaction{})
+
+		c.Status(200)
+	})
+	r.GET("/get_batch", func(c *gin.Context) {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+
+		q := c.Query("b")
+		id, _ := strconv.Atoi(q)
+
+		b, err := nh.SyncRead(ctx, 1, id)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(200, b)
+		return
+	})
+
+	go r.Run(fmt.Sprintf(":808%d", opts.NodeID))
+
+	q := make(chan os.Signal)
+	signal.Notify(q, os.Kill, os.Interrupt)
+
+	<-q
+	fmt.Println("Quitting now")
+	nh.Stop()
+}
+
+func configure(opts nodeOpts) (config.Config, *dragonboat.NodeHost) {
 	cfg := config.Config{
 		NodeID:       opts.NodeID,
 		ClusterID:    clusterID,
@@ -76,31 +127,5 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-
-	nh.StartCluster(initialClusterMembers, opts.Join, raft.NewExampleStateMachine, cfg)
-
-	fmt.Println("RUNNING RAFT SERVER")
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Hour)
-	defer cancel()
-	seq := sequencer.New(nh)
-
-	go seq.Run(ctx)
-
-	r := gin.Default()
-	r.POST("/foo", func(c *gin.Context) {
-		b := &req{}
-		c.BindJSON(b)
-
-		seq.SubmitTransaction(c, sequencer.Transaction{Raw: b.Body})
-
-		c.Status(200)
-	})
-	go r.Run(fmt.Sprintf(":808%d", opts.NodeID))
-
-	q := make(chan os.Signal)
-	signal.Notify(q, os.Kill, os.Interrupt)
-
-	<-q
-	fmt.Println("Quitting now")
-	nh.Stop()
+	return cfg, nh
 }
