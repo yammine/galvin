@@ -6,31 +6,20 @@ import (
 	"fmt"
 	"sync"
 	"time"
-
-	"github.com/lni/dragonboat/v3/client"
-	"github.com/lni/dragonboat/v3/statemachine"
 )
 
-var (
-	defaults = Config{
-		// Using a 1-second epoch here to demonstrate stuff in development.
-		EpochDuration: 1 * time.Second,
-		Reader:        false,
-	}
-)
-
-// Sequencer is the acceptor of all Galvin input.
+// Writer is the acceptor of all Galvin input.
 // It collects inputs for each epoch & persists the batch in a globally consistent order.
-type Sequencer struct {
+type Writer struct {
 	store Store
 	input chan Transaction
 	epoch time.Duration
 }
 
-// NewWriter returns a new Sequencer struct
-func NewWriter(store Store, config ...Config) *Sequencer {
+// NewWriter returns a new Writer struct
+func NewWriter(store Store, config ...Config) *Writer {
 	ch := make(chan Transaction)
-	s := &Sequencer{store: store, input: ch, epoch: defaults.EpochDuration}
+	s := &Writer{store: store, input: ch, epoch: time.Second}
 
 	return s
 }
@@ -51,8 +40,8 @@ func consumptionLoop(ctx context.Context, b *Batch, in chan Transaction) {
 	}
 }
 
-// Run begins the consumption loop of Sequencer
-func (s *Sequencer) Run(ctx context.Context) {
+// Run begins the consumption loop of Writer
+func (s *Writer) Run(ctx context.Context) {
 	batch := &Batch{}
 	timer := time.NewTicker(s.epoch)
 
@@ -75,7 +64,7 @@ func (s *Sequencer) Run(ctx context.Context) {
 }
 
 // SubmitTransaction ...
-func (s *Sequencer) SubmitTransaction(ctx context.Context, txn Transaction) {
+func (s *Writer) SubmitTransaction(ctx context.Context, txn Transaction) {
 	s.input <- txn
 }
 
@@ -106,9 +95,12 @@ func (b *Batch) Flush(ctx context.Context, s Store) {
 	// TODO: Handle errors
 	bytes, _ := json.Marshal(b)
 
+	subCtx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
+	defer cancel()
+
 	// TODO: replace the int there with a configured cluster id
 	cs := s.GetNoOPSession(1)
-	sr, err := s.SyncPropose(ctx, cs, bytes)
+	sr, err := s.SyncPropose(subCtx, cs, bytes)
 	if err != nil {
 		fmt.Println("error: ", err)
 		return
@@ -119,12 +111,6 @@ func (b *Batch) Flush(ctx context.Context, s Store) {
 	// Incrementing the batch number
 	b.Number++
 	fmt.Println("StateMachine Result", sr)
-}
-
-// Store is an interface that our consensus store must implement
-type Store interface {
-	SyncPropose(context.Context, *client.Session, []byte) (statemachine.Result, error)
-	GetNoOPSession(uint64) *client.Session
 }
 
 type Batch struct {

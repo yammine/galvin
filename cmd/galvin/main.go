@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/yammine/galvin/scheduler"
+
 	"github.com/yammine/galvin/raft"
 
 	"github.com/gin-gonic/gin"
@@ -59,12 +61,17 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	//
-	seq := sequencer.NewWriter(nh)
-	go seq.Run(ctx)
+	writer := sequencer.NewWriter(nh)
+	go writer.Run(ctx)
+
+	sch := scheduler.NewSequential()
+	go sch.Run(ctx)
+
+	reader := sequencer.NewReader(nh, sch)
+	go reader.Run(ctx)
 
 	// Create and run our HTTP server
-	r := createRouter(seq, nh)
+	r := createRouter(writer, nh)
 	go r.Run(fmt.Sprintf(":808%d", opts.NodeID))
 
 	q := make(chan os.Signal)
@@ -75,7 +82,7 @@ func main() {
 	nh.Stop()
 }
 
-func createRouter(seq *sequencer.Sequencer, nh *dragonboat.NodeHost) *gin.Engine {
+func createRouter(seq *sequencer.Writer, nh *dragonboat.NodeHost) *gin.Engine {
 	r := gin.Default()
 	r.POST("/submit", func(c *gin.Context) {
 		b := &req{}

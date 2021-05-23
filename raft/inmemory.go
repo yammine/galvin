@@ -2,6 +2,7 @@ package raft
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 
@@ -50,9 +51,13 @@ func (i *InMemory) Update(bytes []byte) (sm.Result, error) {
 }
 
 func (i *InMemory) Lookup(q interface{}) (interface{}, error) {
-	idx := q.(int)
-	b := i.Transactions[idx]
+	idx := q.(uint64)
 
+	if int(idx) >= len(i.Transactions) {
+		return nil, errors.New("batch not found")
+	}
+
+	b := i.Transactions[idx]
 	return b, nil
 }
 
