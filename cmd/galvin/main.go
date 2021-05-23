@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -49,15 +50,32 @@ func main() {
 
 	cfg, nh := configure(opts)
 
-	nh.StartCluster(initialClusterMembers, opts.Join, raft.NewInMemory, cfg)
+	log.Println("Starting the node")
+	err := nh.StartCluster(initialClusterMembers, opts.Join, raft.NewInMemory, cfg)
+	if err != nil {
+		log.Fatal("Failed to start the node: ", err)
+	}
 
-	fmt.Println("RUNNING RAFT SERVER")
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Hour)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	seq := sequencer.New(nh)
 
+	//
+	seq := sequencer.NewWriter(nh)
 	go seq.Run(ctx)
 
+	// Create and run our HTTP server
+	r := createRouter(seq, nh)
+	go r.Run(fmt.Sprintf(":808%d", opts.NodeID))
+
+	q := make(chan os.Signal)
+	signal.Notify(q, os.Kill, os.Interrupt)
+
+	<-q
+	fmt.Println("Quitting now")
+	nh.Stop()
+}
+
+func createRouter(seq *sequencer.Sequencer, nh *dragonboat.NodeHost) *gin.Engine {
 	r := gin.Default()
 	r.POST("/submit", func(c *gin.Context) {
 		b := &req{}
@@ -83,15 +101,7 @@ func main() {
 		c.JSON(200, b)
 		return
 	})
-
-	go r.Run(fmt.Sprintf(":808%d", opts.NodeID))
-
-	q := make(chan os.Signal)
-	signal.Notify(q, os.Kill, os.Interrupt)
-
-	<-q
-	fmt.Println("Quitting now")
-	nh.Stop()
+	return r
 }
 
 func configure(opts nodeOpts) (config.Config, *dragonboat.NodeHost) {

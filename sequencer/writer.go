@@ -27,8 +27,8 @@ type Sequencer struct {
 	epoch time.Duration
 }
 
-// New returns a new Sequencer struct
-func New(store Store, config ...Config) *Sequencer {
+// NewWriter returns a new Sequencer struct
+func NewWriter(store Store, config ...Config) *Sequencer {
 	ch := make(chan Transaction)
 	s := &Sequencer{store: store, input: ch, epoch: defaults.EpochDuration}
 
