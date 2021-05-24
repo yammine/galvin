@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -11,12 +12,15 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/yammine/galvin/storage"
+
+	"github.com/tidwall/buntdb"
+
+	"github.com/jessevdk/go-flags"
+	"github.com/yammine/galvin/raft"
 	"github.com/yammine/galvin/scheduler"
 
-	"github.com/yammine/galvin/raft"
-
 	"github.com/gin-gonic/gin"
-	"github.com/jessevdk/go-flags"
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/dragonboat/v3/config"
 	"github.com/lni/dragonboat/v3/logger"
@@ -44,42 +48,6 @@ var (
 
 type req struct {
 	Body string `form:"body" json:"body"`
-}
-
-func main() {
-	opts := nodeOpts{}
-	flags.Parse(&opts)
-
-	cfg, nh := configure(opts)
-
-	log.Println("Starting the node")
-	err := nh.StartCluster(initialClusterMembers, opts.Join, raft.NewInMemory, cfg)
-	if err != nil {
-		log.Fatal("Failed to start the node: ", err)
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	writer := sequencer.NewWriter(nh)
-	go writer.Run(ctx)
-
-	sch := scheduler.NewSequential()
-	go sch.Run(ctx)
-
-	reader := sequencer.NewReader(nh, sch)
-	go reader.Run(ctx)
-
-	// Create and run our HTTP server
-	r := createRouter(writer, nh)
-	go r.Run(fmt.Sprintf(":808%d", opts.NodeID))
-
-	q := make(chan os.Signal)
-	signal.Notify(q, os.Kill, os.Interrupt)
-
-	<-q
-	fmt.Println("Quitting now")
-	nh.Stop()
 }
 
 func createRouter(seq *sequencer.Writer, nh *dragonboat.NodeHost) *gin.Engine {
@@ -145,4 +113,58 @@ func configure(opts nodeOpts) (config.Config, *dragonboat.NodeHost) {
 		panic(err)
 	}
 	return cfg, nh
+}
+
+func openDB() *buntdb.DB {
+	err := os.MkdirAll("data/bunt/", fs.ModePerm)
+	if err != nil {
+		log.Fatal("could not create data dir for bunt", err)
+	}
+
+	db, err := buntdb.Open("data/bunt/data.db")
+	if err != nil {
+		log.Fatal("failed to open buntdb", err)
+	}
+	return db
+}
+
+func main() {
+	opts := nodeOpts{}
+	flags.Parse(&opts)
+
+	cfg, nh := configure(opts)
+
+	log.Println("Starting the node")
+	err := nh.StartCluster(initialClusterMembers, opts.Join, raft.NewInMemory, cfg)
+	if err != nil {
+		log.Fatal("Failed to start the node: ", err)
+	}
+
+	db := openDB()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// The writer collects transaction requests and batch writes them to our raft log
+	writer := sequencer.NewWriter(nh)
+	go writer.Run(ctx)
+
+	// The scheduler will run transactions after they are committed to the log
+	sch := scheduler.NewSequential(storage.WrapBuntDB(db))
+	go sch.Run(ctx)
+
+	// The reader will fetch transactions that have been committed to the raft log and shuttle them to the scheduler
+	reader := sequencer.NewReader(nh, sch)
+	go reader.Run(ctx)
+
+	// Create and run our HTTP server
+	r := createRouter(writer, nh)
+	go r.Run(fmt.Sprintf(":808%d", opts.NodeID))
+
+	q := make(chan os.Signal)
+	signal.Notify(q, os.Kill, os.Interrupt)
+
+	<-q
+	fmt.Println("Quitting now")
+	nh.Stop()
 }

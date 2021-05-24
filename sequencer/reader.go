@@ -27,21 +27,22 @@ func NewReader(s Store, scheduler Scheduler) *Reader {
 func (r *Reader) Run(ctx context.Context) {
 	for {
 		subCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+		// Read a batch from our log store
 		b, err := r.s.SyncRead(subCtx, 1, r.batchNumber)
 		cancel()
+
 		if err != nil {
 			fmt.Println("Error fetching batch", err)
 			time.Sleep(time.Second)
 			continue
 		}
-		txns := b.([]Transaction)
+
 		select {
 		case <-ctx.Done():
 			fmt.Println("ctx cancelled, terminating loop")
 			return
-		case r.scheduler.BatchInput() <- txns:
+		case r.scheduler.BatchInput() <- b.([]Transaction):
 			r.batchNumber++
-			fmt.Println("add txns to scheduler")
 		}
 	}
 }
