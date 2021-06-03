@@ -3,28 +3,37 @@ package sequencer
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"sync"
 	"time"
+
+	"github.com/rs/xid"
 )
 
 // Writer is the acceptor of all Galvin input.
 // It collects inputs for each epoch & persists the batch in a globally consistent order.
 type Writer struct {
 	store LogStore
-	input chan Transaction
+	input chan *Transaction
 	epoch time.Duration
+	ps    subscriber
+}
+
+type subscriber interface {
+	Subscribe(string) <-chan string
 }
 
 // NewWriter returns a new Writer struct
-func NewWriter(store LogStore, config ...Config) *Writer {
-	ch := make(chan Transaction)
-	s := &Writer{store: store, input: ch, epoch: time.Second}
+func NewWriter(store LogStore, ps subscriber, config ...Config) *Writer {
+	ch := make(chan *Transaction)
+	s := &Writer{store: store, input: ch, epoch: time.Second, ps: ps}
 
 	return s
 }
 
-func consumptionLoop(ctx context.Context, b *Batch, in chan Transaction) {
+func consumptionLoop(ctx context.Context, b *Batch, in chan *Transaction) {
 	for {
 		select {
 		case tx, ok := <-in:
@@ -32,7 +41,7 @@ func consumptionLoop(ctx context.Context, b *Batch, in chan Transaction) {
 				fmt.Println("Channel is closed.")
 				break
 			}
-			b.Add(tx)
+			b.Add(*tx)
 		case <-ctx.Done():
 			fmt.Println("ctx cancelled, terminating loop")
 			return
@@ -64,8 +73,31 @@ func (s *Writer) Run(ctx context.Context) {
 }
 
 // SubmitTransaction ...
-func (s *Writer) SubmitTransaction(ctx context.Context, txn Transaction) {
+// TODO: Pre-process transaction inputs
+// 	1. Identify the read & write sets
+// 	2. Determine whether they are multi-partition
+// 	3. Perform low-isolation reads to pre-compute write results & perform validation
+// 	4. Wait for the result of the transaction
+func (s *Writer) SubmitTransaction(ctx context.Context, ref xid.ID, body []byte) error {
+	txn := &Transaction{}
+	parseTransactionInput(ref, body, txn)
+	out := s.ps.Subscribe(ref.String())
+
+	// Submitting the transaction
 	s.input <- txn
+
+	// Wait for result
+	select {
+	case result := <-out:
+		log.Println("Transaction result: ", result)
+		return nil
+	case <-ctx.Done():
+		return errors.New("submit transaction timeout")
+	}
+}
+
+func parseTransactionInput(ref xid.ID, body []byte, txn *Transaction) {
+	// TODO: Implement me
 }
 
 // Config ...
@@ -144,4 +176,7 @@ type Transaction struct {
 	// Nodes that will participate as Readers and Writers in this transaction.
 	Readers []string
 	Writers []string
+
+	// Reference used to relay messages back to clients waiting on results
+	Ref xid.ID
 }
