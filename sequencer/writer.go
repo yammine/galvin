@@ -11,13 +11,13 @@ import (
 // Writer is the acceptor of all Galvin input.
 // It collects inputs for each epoch & persists the batch in a globally consistent order.
 type Writer struct {
-	store Store
+	store LogStore
 	input chan Transaction
 	epoch time.Duration
 }
 
 // NewWriter returns a new Writer struct
-func NewWriter(store Store, config ...Config) *Writer {
+func NewWriter(store LogStore, config ...Config) *Writer {
 	ch := make(chan Transaction)
 	s := &Writer{store: store, input: ch, epoch: time.Second}
 
@@ -83,7 +83,7 @@ func (b *Batch) Add(t Transaction) {
 }
 
 // Flush ...
-func (b *Batch) Flush(ctx context.Context, s Store) {
+func (b *Batch) Flush(ctx context.Context, s LogStore) {
 	b.Lock()
 	defer b.Unlock()
 	if len(b.Transactions) == 0 {

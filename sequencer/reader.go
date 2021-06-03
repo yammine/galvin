@@ -8,7 +8,7 @@ import (
 
 // Reader ...
 type Reader struct {
-	s           Store
+	s           LogStore
 	scheduler   Scheduler
 	batchNumber uint64
 }
@@ -17,7 +17,7 @@ type Scheduler interface {
 	BatchInput() chan []Transaction
 }
 
-func NewReader(s Store, scheduler Scheduler) *Reader {
+func NewReader(s LogStore, scheduler Scheduler) *Reader {
 	return &Reader{
 		s:         s,
 		scheduler: scheduler,
