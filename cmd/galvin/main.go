@@ -12,6 +12,10 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/rs/xid"
+
+	"github.com/yammine/galvin"
+
 	"github.com/yammine/galvin/storage"
 
 	"github.com/tidwall/buntdb"
@@ -47,7 +51,7 @@ var (
 )
 
 type req struct {
-	Body string `form:"body" json:"body"`
+	Body []byte `form:"body" json:"body"`
 }
 
 func createRouter(seq *sequencer.Writer, nh *dragonboat.NodeHost) *gin.Engine {
@@ -55,8 +59,9 @@ func createRouter(seq *sequencer.Writer, nh *dragonboat.NodeHost) *gin.Engine {
 	r.POST("/submit", func(c *gin.Context) {
 		b := &req{}
 		c.BindJSON(b)
+		ref := xid.New()
 
-		seq.SubmitTransaction(c, sequencer.Transaction{})
+		seq.SubmitTransaction(c, ref, b.Body)
 
 		c.Status(200)
 	})
@@ -141,12 +146,13 @@ func main() {
 	}
 
 	db := openDB()
+	ps := galvin.NewPubSub()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	// The writer collects transaction requests and batch writes them to our raft log
-	writer := sequencer.NewWriter(nh)
+	writer := sequencer.NewWriter(nh, ps)
 	go writer.Run(ctx)
 
 	// The scheduler will run transactions after they are committed to the log
