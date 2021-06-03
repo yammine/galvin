@@ -3,6 +3,8 @@ package storage
 import (
 	"context"
 
+	"github.com/yammine/galvin/scheduler"
+
 	"github.com/tidwall/buntdb"
 )
 
@@ -27,7 +29,7 @@ func (b BuntWrapper) Get(ctx context.Context, key string) (val string, err error
 	return
 }
 
-func (b BuntWrapper) Set(ctx context.Context, key, val string, opts *SetOpts) error {
+func (b BuntWrapper) Set(ctx context.Context, key, val string, opts *scheduler.SetOpts) error {
 	err := b.db.Update(func(tx *buntdb.Tx) error {
 		_, _, err := tx.Set(key, val, nil)
 		return err
@@ -45,4 +47,4 @@ func (b BuntWrapper) Delete(ctx context.Context, key string) (val string, err er
 	return
 }
 
-var _ Storage = (*BuntWrapper)(nil)
+var _ scheduler.Storage = (*BuntWrapper)(nil)

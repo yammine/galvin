@@ -4,19 +4,17 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/yammine/galvin/storage"
-
 	"github.com/yammine/galvin/sequencer"
 )
 
 type Sequential struct {
 	in      chan []sequencer.Transaction
-	storage storage.Storage
+	storage Storage
 }
 
 var _ sequencer.Scheduler = (*Sequential)(nil)
 
-func NewSequential(s storage.Storage) *Sequential {
+func NewSequential(s Storage) *Sequential {
 	return &Sequential{
 		in:      make(chan []sequencer.Transaction),
 		storage: s,
