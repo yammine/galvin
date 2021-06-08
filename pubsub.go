@@ -4,31 +4,31 @@ import "sync"
 
 type PubSub struct {
 	sync.RWMutex
-	subs map[string][]chan string
+	subs map[string]chan interface{}
 }
 
 func NewPubSub() *PubSub {
-	subs := make(map[string][]chan string)
+	subs := make(map[string]chan interface{})
 	return &PubSub{
 		subs: subs,
 	}
 }
 
-func (ps *PubSub) Subscribe(topic string) <-chan string {
+func (ps *PubSub) Subscribe(topic string) <-chan interface{} {
 	ps.Lock()
 	defer ps.Unlock()
 
-	ch := make(chan string, 1)
-	ps.subs[topic] = append(ps.subs[topic], ch)
+	ch := make(chan interface{}, 1)
+	ps.subs[topic] = ch
 
 	return ch
 }
 
-func (ps *PubSub) Publish(topic, msg string) {
+func (ps *PubSub) Publish(topic string, msg interface{}) {
 	ps.RLock()
 	defer ps.RUnlock()
 
-	for _, ch := range ps.subs[topic] {
+	if ch, ok := ps.subs[topic]; ok {
 		ch <- msg
 	}
 }
@@ -38,9 +38,8 @@ func (ps *PubSub) CloseTopic(topic string) {
 	defer ps.Unlock()
 
 	// Close the subscribing channels
-	for _, ch := range ps.subs[topic] {
+	if ch, ok := ps.subs[topic]; ok {
 		close(ch)
+		delete(ps.subs, topic)
 	}
-	// Delete the topic in our map
-	delete(ps.subs, topic)
 }

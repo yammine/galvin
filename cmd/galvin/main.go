@@ -61,9 +61,14 @@ func createRouter(seq *sequencer.Writer, nh *dragonboat.NodeHost) *gin.Engine {
 		c.BindJSON(b)
 		ref := xid.New()
 
-		seq.SubmitTransaction(c, ref, b.Body)
+		err := seq.SubmitTransaction(c, ref, b.Body)
+		if err != nil {
+			c.JSON(500, gin.H{"error": err})
+			return
+		}
 
 		c.Status(200)
+		return
 	})
 	r.GET("/get_batch", func(c *gin.Context) {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -156,7 +161,7 @@ func main() {
 	go writer.Run(ctx)
 
 	// The scheduler will run transactions after they are committed to the log
-	sch := scheduler.NewSequential(storage.WrapBuntDB(db))
+	sch := scheduler.NewSequential(storage.WrapBuntDB(db), ps)
 	go sch.Run(ctx)
 
 	// The reader will fetch transactions that have been committed to the raft log and shuttle them to the scheduler

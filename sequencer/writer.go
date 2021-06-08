@@ -22,7 +22,7 @@ type Writer struct {
 }
 
 type subscriber interface {
-	Subscribe(string) <-chan string
+	Subscribe(string) <-chan interface{}
 }
 
 // NewWriter returns a new Writer struct
@@ -97,6 +97,8 @@ func (s *Writer) SubmitTransaction(ctx context.Context, ref xid.ID, body []byte)
 }
 
 func parseTransactionInput(ref xid.ID, body []byte, txn *Transaction) {
+	txn.Ref = ref
+	txn.Args = body
 	// TODO: Implement me
 }
 

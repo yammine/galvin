@@ -27,6 +27,7 @@ func NewReader(s LogStore, scheduler Scheduler) *Reader {
 func (r *Reader) Run(ctx context.Context) {
 	reads := 0
 	for {
+		// TODO: Speed this up by moving batch reading into multiple routines that update a batch table
 		subCtx, cancel := context.WithTimeout(context.Background(), time.Second)
 		// Read a batch from our log store
 		b, err := r.s.SyncRead(subCtx, 1, r.batchNumber)
